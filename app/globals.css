@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Gör iframes (Youtube) responsiva i Tiptap content */
+.prose iframe {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.5em; /* rounded-xl */
+}
+
+/* Styla blockquotes som "Cards" */
+.prose blockquote {
+  font-style: normal;
+  font-weight: 400;
+  background-color: #f9fafb; /* bg-gray-50 */
+  border-left-width: 4px;
+  border-left-color: #000;
+  padding: 1rem 1.5rem;
+  border-radius: 0 0.5rem 0.5rem 0;
+  color: #374151;
+}
+.prose blockquote p:first-of-type::before {
+  content: none;
+}
+.prose blockquote p:last-of-type::after {
+  content: none;
+}
