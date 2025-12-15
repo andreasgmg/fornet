@@ -163,9 +163,6 @@ export default function NewOrganizationPage() {
                         </div>
                     </div>
 
-// Leta upp formuläret i app/dashboard/new/page.tsx
-                    // Ersätt sektionen "Typ av förening" med detta:
-
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Typ av förening</label>
                         <div className="relative">

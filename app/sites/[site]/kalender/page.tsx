@@ -35,7 +35,10 @@ export default async function CalendarPage({ params }: { params: Promise<{ site:
         <div className="space-y-4">
             {events.length > 0 ? events.map((event: any) => {
                 const dateObj = new Date(event.date);
-                const isPast = dateObj < new Date();
+                // Enkel koll om datumet har passerat (jämför mot midnatt idag för att inte markera dagens events som "förbi")
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const isPast = dateObj < today;
                 
                 return (
                     <div key={event.id} className={`bg-white p-5 rounded-2xl border ${isPast ? 'border-gray-100 opacity-60' : 'border-gray-200 shadow-sm'} flex gap-5 items-start transition-all`}>
@@ -58,7 +61,8 @@ export default async function CalendarPage({ params }: { params: Promise<{ site:
                             </div>
 
                             {event.description && (
-                                <p className="mt-3 text-gray-600 text-sm leading-relaxed">
+                                // FIX: Gör även beskrivningen grå om datumet passerat
+                                <p className={`mt-3 text-sm leading-relaxed ${isPast ? 'text-gray-400' : 'text-gray-600'}`}>
                                     {event.description}
                                 </p>
                             )}

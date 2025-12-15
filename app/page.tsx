@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Check, Shield, FileText, Phone, Users, HelpCircle, Star } from "lucide-react";
+import { ArrowRight, Check, Shield, FileText, Phone, Users, HelpCircle, Star, CreditCard } from "lucide-react";
 
 export default function LandingPage() {
   return (
@@ -50,7 +50,7 @@ export default function LandingPage() {
               href="/login?view=signup" 
               className="w-full sm:w-auto bg-green-600 text-white px-8 py-4 rounded-xl text-lg font-bold hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-lg"
             >
-              Starta provperiod <ArrowRight size={20} />
+              Starta 60 dagars gratis provperiod <ArrowRight size={20} />
             </Link>
             <Link 
               href="#hur-funkar-det" 
@@ -60,10 +60,10 @@ export default function LandingPage() {
             </Link>
           </div>
           
-          <p className="mt-6 text-sm text-gray-500">
-            <Check size={14} className="inline text-green-600 mr-1"/> Prova fritt i 60 dagar
-            <span className="mx-3">•</span>
-            <Check size={14} className="inline text-green-600 mr-1"/> Ingen bindningstid
+          <p className="mt-6 text-sm text-gray-500 font-medium">
+            <Check size={14} className="inline text-green-600 mr-1"/> Helt gratis i 60 dagar
+            <span className="mx-3 text-gray-300">|</span>
+            <Check size={14} className="inline text-green-600 mr-1"/> Avsluta när du vill - kostar 0 kr
           </p>
         </div>
       </section>
@@ -111,7 +111,7 @@ export default function LandingPage() {
       </section>
 
       {/* HUR FUNKAR DET? */}
-      <section id="hur-funkar-det" className="py-24 bg-black text-white px-6">
+      <section id="hur-funkar-det" className="py-24 bg-gray-900 text-white px-6">
         <div className="max-w-6xl mx-auto">
             <div className="text-center mb-16">
                 <h2 className="text-3xl md:text-4xl font-bold mb-6">Så här enkelt är det</h2>
@@ -123,17 +123,17 @@ export default function LandingPage() {
                 <div className="hidden md:block absolute top-12 left-1/6 right-1/6 h-0.5 bg-gray-800 -z-10"></div>
 
                 <div>
-                    <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-6 border-8 border-black shadow-xl">1</div>
+                    <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-6 border-8 border-gray-800 shadow-xl">1</div>
                     <h3 className="text-xl font-bold mb-2">Skapa konto</h3>
                     <p className="text-gray-400 text-sm">Registrera din förening på 30 sekunder. Du får en egen adress direkt (t.ex. bjorken.fornet.se).</p>
                 </div>
                 <div>
-                    <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-6 border-8 border-black shadow-xl">2</div>
+                    <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-6 border-8 border-gray-800 shadow-xl">2</div>
                     <h3 className="text-xl font-bold mb-2">Välj funktioner</h3>
                     <p className="text-gray-400 text-sm">Klicka i vad ni behöver: Bokning, Dokumentarkiv eller bara Nyheter. Vi har färdiga mallar.</p>
                 </div>
                 <div>
-                    <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-6 border-8 border-black shadow-xl">3</div>
+                    <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-6 border-8 border-gray-800 shadow-xl">3</div>
                     <h3 className="text-xl font-bold mb-2">Bjud in medlemmar</h3>
                     <p className="text-gray-400 text-sm">Skicka länken till grannarna. Nu kan de själva se info och boka tider i mobilen.</p>
                 </div>
@@ -150,9 +150,11 @@ export default function LandingPage() {
             </p>
 
             <div className="bg-white border border-gray-200 rounded-3xl p-8 md:p-12 shadow-xl max-w-lg mx-auto relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-2 bg-green-500"></div>
+              <div className="absolute top-0 left-0 right-0 bg-green-50 text-green-800 text-xs font-bold py-2 uppercase tracking-wide border-b border-green-100">
+                Prova riskfritt i 60 dagar
+              </div>
               
-              <div className="flex flex-col md:flex-row justify-between items-center gap-8 mb-8 border-b border-gray-100 pb-8">
+              <div className="mt-6 flex flex-col md:flex-row justify-between items-center gap-8 mb-8 border-b border-gray-100 pb-8">
                   <div className="text-left">
                       <h3 className="text-2xl font-bold text-gray-900">Helår</h3>
                       <p className="text-gray-500 text-sm">Det smartaste valet.</p>
@@ -181,7 +183,10 @@ export default function LandingPage() {
               >
                 Starta provperiod
               </Link>
-              <p className="text-xs text-gray-400 mt-4">Du betalar 0 kr idag. Första dragningen sker om 60 dagar.</p>
+              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
+                <CreditCard size={12} />
+                <p>Ingen dragning idag. Avsluta när du vill under testperioden utan kostnad.</p>
+              </div>
             </div>
         </div>
       </section>
@@ -192,6 +197,10 @@ export default function LandingPage() {
             <h2 className="text-3xl font-bold mb-12 text-center">Vanliga frågor</h2>
             
             <div className="space-y-8">
+                <div>
+                    <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><HelpCircle size={18} className="text-blue-600"/> Kostar det verkligen ingenting att prova?</h3>
+                    <p className="text-gray-600">Precis! Du får 60 dagar helt gratis. Om du avslutar prenumerationen inom dessa 60 dagar dras inte en enda krona.</p>
+                </div>
                 <div>
                     <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><HelpCircle size={18} className="text-blue-600"/> Behöver jag installera något?</h3>
                     <p className="text-gray-600">Nej, Fornet är helt webbaserat. Du och dina medlemmar loggar in via webbläsaren i datorn eller mobilen.</p>

@@ -2,71 +2,63 @@
 
 import { createClient } from '@/utils/supabase/server' // <--- Enda importen vi behöver för klienten
 import { revalidatePath } from 'next/cache'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 // DEFINIERA DEFAULTS FÖR OLIKA TYPER
 const TYPE_DEFAULTS: Record<string, any> = {
-  // Vägförening: Behöver plogstatus, dokument och styrelse
   road: {
     show_snow_status: true,
     show_documents: true,
     show_board: true,
-    show_contact_widget: true
+    show_contact_widget: true,
+    show_news: true
   },
-
-  // BRF: Bokning (tvättstuga/gästlägenhet) är prio 1, dokument viktigt
   brf: {
     show_booking: true,
     show_documents: true,
     show_board: true,
     show_calendar_widget: true,
     show_contact_widget: true,
-    show_broker_info: true
+    show_broker_info: true,
+    show_news: true
   },
-
-  // Båtklubb: Bokning (nattvakt) och kalender
   boat: {
-    show_booking: true,
+    show_booking: true, // Nattvakt/Kranlyft
     show_calendar_widget: true,
-    show_water_status: true, // Kan användas som "Hamnstatus"
-    show_contact_widget: true
+    show_water_status: true, // Hamnstatus
+    show_contact_widget: true,
+    show_board: true,
+    show_news: true
   },
-
-  // Sommarstuga: Vattenstatus och kalender (städdagar)
-  cabin: {
+  cabin: { // Sommarstugeområde
     show_water_status: true,
     show_calendar_widget: true,
     show_documents: true,
-    show_contact_widget: true
+    show_contact_widget: true,
+    show_board: true,
+    show_news: true
   },
-
-  // Koloni: Vatten och kalender
-  allotment: {
-    show_water_status: true,
-    show_calendar_widget: true,
-    show_contact_widget: true
+  hunt: { // Jaktlag
+    show_calendar_widget: true, // Jaktkalender
+    show_news: true,            // Jaktrapporter
+    show_documents: true,       // Slaktlistor/Kartor
+    show_board: false,          // Oftast inte relevant publikt
+    show_contact_widget: false, // Jaktlag har sällan "felanmälan"
+    show_membership_form: true  // Jaktlag vill ofta ha nya medlemmar/gästjägare
   },
-
-  // Bygdegård: Bokning (uthyrning) och kalender är allt
-  venue: {
-    show_booking: true,
-    show_calendar_widget: true,
-    show_contact_widget: true
-  },
-
-  // Jaktlag: Kalender och kontakt
-  hunt: {
+  venue: { // Bygdegård
+    show_booking: true,         // Uthyrning
     show_calendar_widget: true,
     show_contact_widget: true,
-    show_board: true
+    show_news: true
   },
-
-  // Fallback för övriga
   other: {
     show_documents: true,
-    show_contact_widget: true
+    show_contact_widget: true,
+    show_news: true
   }
 };
 
@@ -207,16 +199,37 @@ export async function uploadDocument(orgId: string, formData: FormData) {
   const supabase = await createClient();
   const title = formData.get('title') as string;
   const file = formData.get('file') as File;
+  
   if (!file || !title) throw new Error("Saknar data");
 
-  const filename = `${orgId}/${Date.now()}-${file.name.replaceAll(' ', '_')}`;
+  // FIX: Tuffare tvätt av filnamnet
+  // 1. Ersätt åäö med aao
+  // 2. Ta bort allt som inte är a-z, 0-9, bindestreck, understreck eller punkt
+  const safeName = file.name
+    .toLowerCase()
+    .replace(/å/g, 'a').replace(/ä/g, 'a').replace(/ö/g, 'o')
+    .replace(/[^a-z0-9._-]/g, '_');
+
+  const filename = `${orgId}/${Date.now()}-${safeName}`;
+  
   const { error } = await supabase.storage.from('forum-documents').upload(filename, file);
-  if (error) throw error;
+  if (error) {
+      console.error("Upload error:", error);
+      throw new Error("Kunde inte ladda upp filen. Testa att byta namn på den.");
+  }
 
   await updateStorageUsage(orgId, file.size);
   const { data: { publicUrl } } = supabase.storage.from('forum-documents').getPublicUrl(filename);
-  await supabase.from('documents').insert({ org_id: orgId, title, file_url: publicUrl, size: file.size });
-  revalidatePath('/dashboard'); revalidatePath('/dokument');
+  
+  await supabase.from('documents').insert({ 
+      org_id: orgId, 
+      title, 
+      file_url: publicUrl, 
+      size: file.size 
+  });
+  
+  revalidatePath('/dashboard'); 
+  revalidatePath('/dokument');
 }
 
 export async function deleteDocument(id: string) {
@@ -450,6 +463,8 @@ export async function updateSettings(subdomain: string, formData: FormData) {
   if (formData.has('alert_level')) updates.alert_level = formData.get('alert_level');
   if (formData.has('facebook_url')) updates.facebook_url = formData.get('facebook_url');
   if (formData.has('instagram_url')) updates.instagram_url = formData.get('instagram_url');
+  if (formData.has('header_text')) updates.header_text = formData.get('header_text');
+  if (formData.has('subheader_text')) updates.subheader_text = formData.get('subheader_text');
 
   // ... (Bild-uppladdningen ligger kvar här) ...
   const mapFile = formData.get('map_image') as File;
@@ -597,15 +612,23 @@ export async function searchSite(subdomain: string, query: string) {
 export async function addSponsor(orgId: string, formData: FormData) {
   const supabase = await createClient();
   const name = formData.get('name') as string;
-  const website_url = formData.get('website_url') as string;
+  let website_url = formData.get('website_url') as string;
   const file = formData.get('logo') as File;
 
   if (!file || !name) return;
 
-  // Ladda upp logga
-  const filename = `${orgId}/sponsor-${Date.now()}`;
+  if (website_url && !website_url.startsWith('http')) {
+    website_url = `https://${website_url}`;
+  }
+
+  // Ladda upp logga till 'forum-media'
+  const filename = `${orgId}/sponsor-${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_')}`;
   const { error: uploadError } = await supabase.storage.from('forum-media').upload(filename, file);
-  if (uploadError) throw uploadError;
+
+  if (uploadError) {
+    console.error("Upload error:", uploadError);
+    throw new Error("Kunde inte ladda upp bilden");
+  }
 
   const { data: { publicUrl } } = supabase.storage.from('forum-media').getPublicUrl(filename);
 
@@ -625,4 +648,117 @@ export async function deleteSponsor(id: string) {
   await supabase.from('sponsors').delete().eq('id', id);
   revalidatePath('/dashboard');
   revalidatePath('/');
+}
+
+// --- MEDLEMSANSÖKNINGAR ---
+
+export async function approveMembershipApplication(submissionId: string, orgId: string, email: string) {
+  const supabase = await createClient();
+  
+  // 1. Kolla att man är inloggad (Säkerhet)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  if (email) {
+      // 2. Bjud in medlemmen (Görs som "Ove", så vi ser vem som bjöd in)
+      const { error: inviteError } = await supabase.from('organization_members').insert({
+        org_id: orgId,
+        email: email.toLowerCase().trim(),
+        role: 'member'
+      });
+
+      if (inviteError && inviteError.code !== '23505') { 
+          console.error("Kunde inte skapa medlem:", inviteError);
+      }
+  }
+
+  // 3. RADERA MED SUPER-KRAFT (Bypass RLS)
+  // Vi skapar en tillfällig admin-klient bara för att radera
+  const supabaseAdmin = createSupabaseAdmin(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  // Städa bort ALLA ansökningar från denna mail (rensar dubbletter också)
+  const { error: deleteError } = await supabaseAdmin
+    .from('form_submissions')
+    .delete()
+    .eq('org_id', orgId)
+    .eq('type', 'membership')
+    .contains('data', { email: email });
+
+  if (deleteError) {
+      console.error("ADMIN DELETE ERROR:", deleteError);
+  } else {
+      console.log(`[Admin] Rensade ansökningar för ${email}`);
+  }
+
+  revalidatePath('/dashboard');
+  revalidatePath('/', 'layout');
+}
+
+export async function rejectMembershipApplication(submissionId: string) {
+  // Använd Super-Admin här också för att vara säker
+  const supabaseAdmin = createSupabaseAdmin(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+  
+  await supabaseAdmin.from('form_submissions').delete().eq('id', submissionId);
+  
+  revalidatePath('/dashboard');
+  revalidatePath('/', 'layout');
+}
+
+export async function saveNewsletter(orgId: string, formData: FormData, idToUpdate?: string) {
+  const supabase = await createClient();
+  const subject = formData.get('subject') as string;
+  const content = formData.get('content') as string;
+
+  if (!subject || !content) return { error: "Fyll i ämne och innehåll" };
+
+  const data = { org_id: orgId, subject, content };
+
+  if (idToUpdate) {
+    await supabase.from('newsletters').update(data).eq('id', idToUpdate);
+  } else {
+    await supabase.from('newsletters').insert(data);
+  }
+
+  revalidatePath('/dashboard');
+}
+
+export async function deleteNewsletter(id: string) {
+  const supabase = await createClient();
+  await supabase.from('newsletters').delete().eq('id', id);
+  revalidatePath('/dashboard');
+}
+
+export async function sendNewsletter(id: string) {
+  const supabase = await createClient();
+  
+  // 1. Hämta utskicket
+  const { data: letter } = await supabase.from('newsletters').select('*').eq('id', id).single();
+  if (!letter) return { error: "Hittade inte utskicket" };
+
+  // 2. Hämta alla medlemmar (epost)
+  const { data: members } = await supabase
+    .from('organization_members')
+    .select('email')
+    .eq('org_id', letter.org_id);
+
+  if (!members || members.length === 0) return { error: "Inga medlemmar att skicka till." };
+
+  // 3. SIMULERA UTSKICK (Här kopplar vi på Resend/SendGrid senare)
+  console.log(`🚀 SKICKAR NYHETSBREV: "${letter.subject}"`);
+  console.log(`📨 MOTTAGARE (${members.length} st):`, members.map(m => m.email).join(', '));
+  
+  // 4. Uppdatera status till 'sent'
+  await supabase.from('newsletters').update({ 
+      status: 'sent', 
+      sent_at: new Date().toISOString() 
+  }).eq('id', id);
+
+  revalidatePath('/dashboard');
+  return { success: true, count: members.length };
 }
