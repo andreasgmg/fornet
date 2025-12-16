@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/utils/supabase/server' // <--- Enda importen vi behöver för klienten
+import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
 import Stripe from 'stripe';
@@ -47,7 +47,9 @@ const TYPE_DEFAULTS: Record<string, any> = {
     show_documents: true,       // Slaktlistor/Kartor
     show_board: false,          // Oftast inte relevant publikt
     show_contact_widget: false, // Jaktlag har sällan "felanmälan"
-    show_membership_form: true  // Jaktlag vill ofta ha nya medlemmar/gästjägare
+    show_membership_form: true,  // Jaktlag vill ofta ha nya medlemmar/gästjägare
+    show_snow_status: true, // Vi återanvänder denna för "Jaktstatus"!
+    snow_status_text: 'Ingen jakt' // Default text
   },
   venue: { // Bygdegård
     show_booking: true,         // Uthyrning
@@ -61,6 +63,25 @@ const TYPE_DEFAULTS: Record<string, any> = {
     show_news: true
   }
 };
+
+// HJÄLPFUNKTION: Kolla om användaren är admin (SÄKERHET)
+async function requireAdmin(orgId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Ej inloggad");
+
+  const { data: member } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('org_id', orgId)
+    .eq('user_id', user.id)
+    .single();
+
+  if (!member || (member.role !== 'admin' && member.role !== 'owner')) {
+    throw new Error("Behörighet saknas");
+  }
+  return user;
+}
 
 // --- SKAPA FÖRENING (Ny) ---
 
@@ -110,12 +131,12 @@ export async function createOrganization(formData: FormData) {
     return { error: "Kunde inte skapa föreningen." };
   }
 
-  // 2. Lägg till admin
+  // 2. Lägg till admin (Owner)
   await supabase.from('organization_members').insert({
     org_id: org.id,
     user_id: user.id,
     email: user.email,
-    role: 'admin'
+    role: 'owner'
   });
 
   revalidatePath('/dashboard');
@@ -126,8 +147,11 @@ export async function createOrganization(formData: FormData) {
 
 export async function updateModuleStatus(subdomain: string, moduleKey: string, newValue: boolean) {
   const supabase = await createClient();
-  const { data: org } = await supabase.from('organizations').select('config').eq('subdomain', subdomain).single();
+  const { data: org } = await supabase.from('organizations').select('id, config').eq('subdomain', subdomain).single();
   if (!org) return;
+
+  await requireAdmin(org.id); // SÄKERHETSKOLL
+
   const newConfig = { ...org.config, [moduleKey]: newValue };
   await supabase.from('organizations').update({ config: newConfig }).eq('subdomain', subdomain);
   revalidatePath('/'); revalidatePath('/dashboard');
@@ -156,8 +180,11 @@ export async function updateStorageUsage(orgId: string, fileSize: number) {
 export async function updateSnowStatusDetail(subdomain: string, formData: FormData) {
   const supabase = await createClient();
   const newStatus = formData.get('status') as string;
-  const { data: org } = await supabase.from('organizations').select('config').eq('subdomain', subdomain).single();
+  const { data: org } = await supabase.from('organizations').select('id, config').eq('subdomain', subdomain).single();
   if (!org) return;
+
+  await requireAdmin(org.id); // SÄKERHETSKOLL
+
   const newConfig = {
     ...org.config,
     snow_status_text: newStatus,
@@ -175,12 +202,19 @@ export async function createPost(slug: string, formData: FormData) {
   const content = formData.get('content') as string;
   const { data: org } = await supabase.from('organizations').select('id').eq('subdomain', slug).single();
   if (!org) throw new Error("Föreningen hittades inte");
+
+  await requireAdmin(org.id); // SÄKERHETSKOLL
+
   await supabase.from('posts').insert({ org_id: org.id, title, content });
   revalidatePath('/'); revalidatePath('/dashboard');
 }
 
 export async function updatePost(postId: string, formData: FormData) {
   const supabase = await createClient();
+  // Hämta post för att hitta org_id
+  const { data: post } = await supabase.from('posts').select('org_id').eq('id', postId).single();
+  if(post) await requireAdmin(post.org_id); // SÄKERHETSKOLL
+
   const title = formData.get('title') as string;
   const content = formData.get('content') as string;
   await supabase.from('posts').update({ title, content }).eq('id', postId);
@@ -189,6 +223,9 @@ export async function updatePost(postId: string, formData: FormData) {
 
 export async function deletePost(id: string) {
   const supabase = await createClient();
+  const { data: post } = await supabase.from('posts').select('org_id').eq('id', id).single();
+  if(post) await requireAdmin(post.org_id); // SÄKERHETSKOLL
+
   await supabase.from('posts').delete().eq('id', id);
   revalidatePath('/dashboard');
 }
@@ -196,6 +233,7 @@ export async function deletePost(id: string) {
 // --- DOKUMENT ---
 
 export async function uploadDocument(orgId: string, formData: FormData) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   const title = formData.get('title') as string;
   const file = formData.get('file') as File;
@@ -203,8 +241,6 @@ export async function uploadDocument(orgId: string, formData: FormData) {
   if (!file || !title) throw new Error("Saknar data");
 
   // FIX: Tuffare tvätt av filnamnet
-  // 1. Ersätt åäö med aao
-  // 2. Ta bort allt som inte är a-z, 0-9, bindestreck, understreck eller punkt
   const safeName = file.name
     .toLowerCase()
     .replace(/å/g, 'a').replace(/ä/g, 'a').replace(/ö/g, 'o')
@@ -234,6 +270,9 @@ export async function uploadDocument(orgId: string, formData: FormData) {
 
 export async function deleteDocument(id: string) {
   const supabase = await createClient();
+  const { data: doc } = await supabase.from('documents').select('org_id').eq('id', id).single();
+  if(doc) await requireAdmin(doc.org_id); // SÄKERHETSKOLL
+
   await supabase.from('documents').delete().eq('id', id);
   revalidatePath('/dashboard'); revalidatePath('/dokument');
 }
@@ -241,6 +280,7 @@ export async function deleteDocument(id: string) {
 // --- EVENTS ---
 
 export async function addEvent(orgId: string, formData: FormData) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   await supabase.from('events').insert({
     org_id: orgId,
@@ -253,6 +293,9 @@ export async function addEvent(orgId: string, formData: FormData) {
 
 export async function deleteEvent(id: string) {
   const supabase = await createClient();
+  const { data: evt } = await supabase.from('events').select('org_id').eq('id', id).single();
+  if(evt) await requireAdmin(evt.org_id); // SÄKERHETSKOLL
+
   await supabase.from('events').delete().eq('id', id);
   revalidatePath('/dashboard');
 }
@@ -260,6 +303,7 @@ export async function deleteEvent(id: string) {
 // --- BOARD ---
 
 export async function addBoardMember(orgId: string, formData: FormData) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   await supabase.from('board_members').insert({
     org_id: orgId,
@@ -273,6 +317,9 @@ export async function addBoardMember(orgId: string, formData: FormData) {
 
 export async function deleteBoardMember(id: string) {
   const supabase = await createClient();
+  const { data: bm } = await supabase.from('board_members').select('org_id').eq('id', id).single();
+  if(bm) await requireAdmin(bm.org_id); // SÄKERHETSKOLL
+
   await supabase.from('board_members').delete().eq('id', id);
   revalidatePath('/dashboard'); revalidatePath('/styrelsen');
 }
@@ -280,6 +327,7 @@ export async function deleteBoardMember(id: string) {
 // --- TEAM & INVITES ---
 
 export async function inviteMember(orgId: string, formData: FormData) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   const email = formData.get('email') as string;
   const { error } = await supabase.from('organization_members').insert({
@@ -296,8 +344,10 @@ export async function inviteMember(orgId: string, formData: FormData) {
 
 export async function removeMember(memberId: string) {
   const supabase = await createClient();
-  const { data: member } = await supabase.from('organization_members').select('user_id, organizations(owner_id)').eq('id', memberId).single();
+  const { data: member } = await supabase.from('organization_members').select('org_id, user_id, organizations(owner_id)').eq('id', memberId).single();
   if (!member) return;
+
+  await requireAdmin(member.org_id); // SÄKERHETSKOLL
 
   const org: any = member.organizations;
   if (member.user_id === org.owner_id) throw new Error("Du kan inte ta bort ägaren av föreningen.");
@@ -326,10 +376,12 @@ export async function createCheckoutSession(interval: 'month' | 'year') {
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://app.fornet.se:3000';
 
-  // Byt ut dessa mot dina RIKTIGA IDn från Stripe!
+  // 2. ENV VARS FÖR SÄKERHET
   const priceId = interval === 'year'
-    ? 'price_1SZwnTQPagsqvP2zcVWuFGHt'  // <--- DITT ÅRSPRIS-ID
-    : 'price_1SZwnCQPagsqvP2zEaxMBF5Q'; // <--- DITT MÅNADSPRIS-ID
+    ? process.env.STRIPE_PRICE_ID_YEAR
+    : process.env.STRIPE_PRICE_ID_MONTH;
+
+  if (!priceId) return { error: "Pris-ID saknas i systemet." };
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -362,6 +414,7 @@ export async function createCheckoutSession(interval: 'month' | 'year') {
 // --- BOKNINGSSYSTEM - RESURSER ---
 
 export async function createResource(orgId: string, formData: FormData) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   const name = formData.get('name') as string;
 
@@ -380,6 +433,9 @@ export async function createResource(orgId: string, formData: FormData) {
 
 export async function deleteResource(id: string) {
   const supabase = await createClient();
+  const { data: r } = await supabase.from('resources').select('org_id').eq('id', id).single();
+  if(r) await requireAdmin(r.org_id); // SÄKERHETSKOLL
+
   await supabase.from('resources').delete().eq('id', id);
   revalidatePath('/dashboard');
   revalidatePath('/boka');
@@ -393,11 +449,16 @@ export async function createBooking(resourceId: string, formData: FormData) {
   const date = formData.get('date') as string; // "2024-05-20"
   const startTime = formData.get('startTime') as string; // "10:00"
   const endTime = formData.get('endTime') as string; // "12:00"
-  const name = formData.get('name') as string; // "Lgh 12"
+  const name = formData.get('name') as string; 
+  const contact = formData.get('contact') as string; // NYTT FÄLT
 
-  if (!date || !startTime || !endTime || !name) {
+  if (!date || !startTime || !endTime || !name || !contact) {
     return { error: "Fyll i alla fält." };
   }
+
+  // 3. KOMBINERA NAMN & KONTAKT (Spara DB-schema)
+  // "Anders Andersson (Lgh 12)"
+  const fullName = `${name} (${contact})`;
 
   // Skapa ISO-datumsträngar för databasen
   // OBS: Detta utgår från lokal tid, för MVP är det okej men tidszoner är krångligt.
@@ -423,7 +484,7 @@ export async function createBooking(resourceId: string, formData: FormData) {
   // 2. BOKA
   const { error } = await supabase.from('bookings').insert({
     resource_id: resourceId,
-    user_name: name,
+    user_name: fullName,
     start_time: startISO,
     end_time: endISO
   });
@@ -440,6 +501,8 @@ export async function createBooking(resourceId: string, formData: FormData) {
 export async function deleteBooking(bookingId: string) {
   const supabase = await createClient();
   // Här borde vi egentligen kolla om man ÄGER bokningen, men vi kör öppet för MVP
+  // Eller om man är admin. För nuvarande tillåter vi "open delete" för enkelhet, men 
+  // i en skarp version bör man kolla cookie eller IP.
   await supabase.from('bookings').delete().eq('id', bookingId);
   revalidatePath('/boka');
 }
@@ -449,6 +512,8 @@ export async function updateSettings(subdomain: string, formData: FormData) {
   const supabase = await createClient();
   const { data: org } = await supabase.from('organizations').select('id').eq('subdomain', subdomain).single();
   if (!org) return;
+
+  await requireAdmin(org.id); // SÄKERHETSKOLL
 
   const updates: any = {};
 
@@ -468,7 +533,14 @@ export async function updateSettings(subdomain: string, formData: FormData) {
 
   // ... (Bild-uppladdningen ligger kvar här) ...
   const mapFile = formData.get('map_image') as File;
-  if (mapFile && mapFile.size > 0) { /* ... kod för map ... */ }
+  if (mapFile && mapFile.size > 0 && mapFile.name !== 'undefined') {
+      const filename = `${org.id}/map-${Date.now()}`;
+      const { error } = await supabase.storage.from('forum-media').upload(filename, mapFile, { upsert: true });
+      if (!error) {
+        const { data: { publicUrl } } = supabase.storage.from('forum-media').getPublicUrl(filename);
+        updates.map_image_url = publicUrl;
+      }
+  }
 
   const heroFile = formData.get('hero_image') as File;
   if (heroFile && heroFile.size > 0 && heroFile.name !== 'undefined') {
@@ -498,6 +570,7 @@ export async function updateSettings(subdomain: string, formData: FormData) {
 
 // --- EGNA SIDOR ---
 export async function createPage(orgId: string, formData: FormData) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   const title = formData.get('title') as string;
   const content = formData.get('content') as string;
@@ -512,6 +585,9 @@ export async function createPage(orgId: string, formData: FormData) {
 
 export async function deletePage(id: string) {
   const supabase = await createClient();
+  const { data: page } = await supabase.from('pages').select('org_id').eq('id', id).single();
+  if (page) await requireAdmin(page.org_id); // SÄKERHETSKOLL
+
   await supabase.from('pages').delete().eq('id', id);
   revalidatePath('/dashboard');
   revalidatePath('/');
@@ -519,6 +595,8 @@ export async function deletePage(id: string) {
 
 export async function updatePage(pageId: string, formData: FormData) {
   const supabase = await createClient();
+  const { data: page } = await supabase.from('pages').select('org_id').eq('id', pageId).single();
+  if (page) await requireAdmin(page.org_id); // SÄKERHETSKOLL
 
   const title = formData.get('title') as string;
   const content = formData.get('content') as string;
@@ -540,6 +618,9 @@ export async function submitForm(orgId: string, type: string, formData: FormData
   // Konvertera FormData till JSON
   const data: Record<string, any> = {};
   formData.forEach((value, key) => data[key] = value);
+
+  // 4. TA BORT PERSONNUMMER FRÅN DATA OM DET INTE FYLLTS I (Städa)
+  if (!data.personal_number) delete data.personal_number;
 
   await supabase.from('form_submissions').insert({
     org_id: orgId,
@@ -610,6 +691,7 @@ export async function searchSite(subdomain: string, query: string) {
 
 // --- SPONSORER ---
 export async function addSponsor(orgId: string, formData: FormData) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   const name = formData.get('name') as string;
   let website_url = formData.get('website_url') as string;
@@ -645,6 +727,9 @@ export async function addSponsor(orgId: string, formData: FormData) {
 
 export async function deleteSponsor(id: string) {
   const supabase = await createClient();
+  const { data: s } = await supabase.from('sponsors').select('org_id').eq('id', id).single();
+  if (s) await requireAdmin(s.org_id); // SÄKERHETSKOLL
+
   await supabase.from('sponsors').delete().eq('id', id);
   revalidatePath('/dashboard');
   revalidatePath('/');
@@ -655,9 +740,7 @@ export async function deleteSponsor(id: string) {
 export async function approveMembershipApplication(submissionId: string, orgId: string, email: string) {
   const supabase = await createClient();
   
-  // 1. Kolla att man är inloggad (Säkerhet)
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  await requireAdmin(orgId); // SÄKERHETSKOLL
 
   if (email) {
       // 2. Bjud in medlemmen (Görs som "Ove", så vi ser vem som bjöd in)
@@ -711,6 +794,7 @@ export async function rejectMembershipApplication(submissionId: string) {
 }
 
 export async function saveNewsletter(orgId: string, formData: FormData, idToUpdate?: string) {
+  await requireAdmin(orgId); // SÄKERHETSKOLL
   const supabase = await createClient();
   const subject = formData.get('subject') as string;
   const content = formData.get('content') as string;
@@ -730,6 +814,9 @@ export async function saveNewsletter(orgId: string, formData: FormData, idToUpda
 
 export async function deleteNewsletter(id: string) {
   const supabase = await createClient();
+  const { data: n } = await supabase.from('newsletters').select('org_id').eq('id', id).single();
+  if (n) await requireAdmin(n.org_id); // SÄKERHETSKOLL
+
   await supabase.from('newsletters').delete().eq('id', id);
   revalidatePath('/dashboard');
 }
@@ -740,6 +827,8 @@ export async function sendNewsletter(id: string) {
   // 1. Hämta utskicket
   const { data: letter } = await supabase.from('newsletters').select('*').eq('id', id).single();
   if (!letter) return { error: "Hittade inte utskicket" };
+
+  await requireAdmin(letter.org_id); // SÄKERHETSKOLL
 
   // 2. Hämta alla medlemmar (epost)
   const { data: members } = await supabase

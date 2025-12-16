@@ -10,7 +10,6 @@ export default function MembershipForm({ orgId }: { orgId: string }) {
 
   const handleSubmit = async (formData: FormData) => {
     setLoading(true);
-    // Vi använder samma server action som förut, men med typen 'membership'
     await submitForm(orgId, 'membership', formData);
     setLoading(false);
     setSent(true);
@@ -46,9 +45,11 @@ export default function MembershipForm({ orgId }: { orgId: string }) {
                 </div>
             </div>
 
+            {/* ÄNDRAT: Fastighetsbeteckning istället för personnummer */}
             <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Personnummer / Org.nr</label>
-                <input name="personal_number" placeholder="ÅÅMMDD-XXXX" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-black transition-all" />
+                <label className="block text-sm font-bold text-gray-700 mb-1">Fastighetsbeteckning (Valfritt)</label>
+                <input name="address_id" placeholder="T.ex. Björken 1:4 eller Lgh 1102" className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-black transition-all" />
+                <p className="text-xs text-gray-400 mt-1">Hjälper oss matcha dig med rätt bostad.</p>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
@@ -68,7 +69,7 @@ export default function MembershipForm({ orgId }: { orgId: string }) {
             </div>
 
             <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Meddelande (Valfritt)</label>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Meddelande</label>
                 <textarea name="message" rows={3} placeholder="Övrig information..." className="w-full border rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-black transition-all" />
             </div>
 

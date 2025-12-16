@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
-import { Snowflake, Droplets, MapPin, Calendar, ArrowRight, FileText, Key, AlertTriangle, ChevronRight, Info, Recycle, Briefcase, UserPlus } from 'lucide-react';
+// NYTT: Importera Target-ikonen
+import { Snowflake, Droplets, MapPin, Calendar, ArrowRight, FileText, Key, AlertTriangle, ChevronRight, Info, Recycle, Briefcase, UserPlus, Target } from 'lucide-react';
 import PublicForm from '@/components/PublicForm';
 
 // Tvinga uppdatering så bilder/status syns direkt
@@ -54,17 +55,25 @@ export default async function TenantPage({ params }: { params: Promise<{ site: s
   const themeClass = themeGradients[org.theme_color] || themeGradients.gray;
   const sortedEvents = org.events?.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()) || [];
 
-  const showSnowAlert = config.show_snow_status && config.snow_status_text && config.snow_status_text !== 'Ej åtgärdat' && config.snow_status_text !== 'Plogat & Sandat';
+  // LOGIK FÖR STATUS-VARNING
+  const isHunt = org.type === 'hunt';
+  const showStatus = config.show_snow_status && config.snow_status_text && 
+      (isHunt ? config.snow_status_text !== 'Ingen jakt' : (config.snow_status_text !== 'Ej åtgärdat' && config.snow_status_text !== 'Plogat & Sandat'));
 
   return (
     <main className="pb-20 bg-slate-50 min-h-screen">
 
-      {showSnowAlert && (
-        <StatusAlert icon={Snowflake} title="Vinterväghållning" status={config.snow_status_text} colorBg="bg-yellow-100" colorText="text-yellow-800" />
+      {showStatus && (
+        isHunt ? (
+            // JAKT-VARIANT
+            <StatusAlert icon={Target} title="Jaktstatus" status={config.snow_status_text} colorBg="bg-orange-100" colorText="text-orange-900" />
+        ) : (
+            // SNÖ-VARIANT
+            <StatusAlert icon={Snowflake} title="Vinterväghållning" status={config.snow_status_text} colorBg="bg-yellow-100" colorText="text-yellow-800" />
+        )
       )}
 
       {org.alert_message && (
-        // FIX: w-full och sticky top-0 för att den ska synas ordentligt
         <div className={`w-full px-4 py-3 flex items-center justify-center gap-2 text-sm font-bold shadow-sm relative z-50 ${org.alert_level === 'critical' ? 'bg-red-600 text-white' :
             org.alert_level === 'info' ? 'bg-blue-600 text-white' :
               'bg-yellow-100 text-yellow-800' // Default warning
@@ -116,14 +125,18 @@ export default async function TenantPage({ params }: { params: Promise<{ site: s
 
         <div className="lg:col-span-2">
 
-          {/* Driftstatus */}
-          {(config.show_snow_status || config.show_water_status) && !showSnowAlert && (
+          {/* Driftstatus - WIDGETAR OM DE INTE VISAS I TOPPEN */}
+          {(config.show_snow_status || config.show_water_status) && !showStatus && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-6 md:mb-8">
               {config.show_snow_status && (
                 <div className="bg-white border border-gray-200 p-3 md:p-4 rounded-xl flex items-center gap-3 shadow-sm">
-                  <div className="bg-blue-50 text-blue-600 p-2 md:p-2.5 rounded-lg"><Snowflake size={18} /></div>
+                  <div className={`p-2 md:p-2.5 rounded-lg ${isHunt ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
+                      {isHunt ? <Target size={18} /> : <Snowflake size={18} />}
+                  </div>
                   <div>
-                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Vinterväghållning</div>
+                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                        {isHunt ? 'Jaktstatus' : 'Vinterväghållning'}
+                    </div>
                     <div className="font-semibold text-gray-800 text-sm">{config.snow_status_text || "Ingen info"}</div>
                   </div>
                 </div>
