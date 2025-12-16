@@ -1,21 +1,14 @@
 'use client'
 
-import { createClient } from '@/utils/supabase/client'
+import { logout } from '@/app/login/actions' // Importera vår nya action
 import { LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function SignOutButton() {
   const handleLogout = async () => {
-    const supabase = createClient()
-    
-    // 1. Logga ut mot Supabase
-    await supabase.auth.signOut()
-    
-    // 2. Visa notis
-    toast.success("Du har loggats ut.")
-    
-    // 3. HÅRD NAVIGERING till login (rensar cachen)
-    window.location.href = '/login'
+    // Kör server action
+    await logout();
+    toast.success("Du har loggats ut.");
   }
 
   return (

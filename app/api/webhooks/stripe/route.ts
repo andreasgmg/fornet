@@ -1,19 +1,11 @@
 import { headers } from 'next/headers';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js'; 
+import PocketBase from 'pocketbase';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
-// Admin-klient för att uppdatera användare utan att vara inloggad
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! 
-);
-
 export async function POST(req: Request) {
   const body = await req.text();
-  
-  // FIX: Awaita headers() innan du kör .get()
   const headerList = await headers();
   const signature = headerList.get('stripe-signature') as string;
 
@@ -35,14 +27,26 @@ export async function POST(req: Request) {
     const userId = session.metadata?.userId;
 
     if (userId) {
-      // UPPDATERA DATABASEN: Användaren är nu PRO!
-      await supabaseAdmin
-        .from('profiles')
-        .update({ 
+      try {
+        // Initiera PocketBase (ingen cookies/auth store behövs här)
+        const pb = new PocketBase(process.env.NEXT_PUBLIC_POCKETBASE_URL);
+        
+        // Logga in som Super-Admin för att kunna skriva till user-tabellen fritt
+        await pb.admins.authWithPassword(
+          process.env.PB_ADMIN_EMAIL!, 
+          process.env.PB_ADMIN_PASSWORD!
+        );
+
+        // UPPDATERA DATABASEN: Användaren är nu PRO!
+        await pb.collection('users').update(userId, { 
             is_pro: true,
             stripe_customer_id: session.customer as string
-        })
-        .eq('id', userId);
+        });
+        
+      } catch (err) {
+        console.error("Failed to update PocketBase user:", err);
+        return new Response("Database update failed", { status: 500 });
+      }
     }
   }
 

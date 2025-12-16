@@ -1,8 +1,9 @@
 // app/login/actions.ts
 'use server'
 
-import { createClient } from '@/lib/pocketbase'; // OBS: Vår nya fil
+import { createClient } from '@/lib/pocketbase'; 
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 export async function login(formData: FormData) {
   const pb = await createClient();
@@ -10,16 +11,14 @@ export async function login(formData: FormData) {
   const password = formData.get('password') as string;
 
   try {
-    // Försök logga in
-    const authData = await pb.collection('users').authWithPassword(email, password);
+    await pb.collection('users').authWithPassword(email, password);
 
-    // Sätt kakan manuellt så Next.js kommer ihåg inloggningen
     const cookieStore = await cookies();
     cookieStore.set('pb_auth', pb.authStore.exportToCookie({ httpOnly: false }), {
       secure: process.env.NODE_ENV === 'production',
       path: '/',
       sameSite: 'lax',
-      httpOnly: true, // Viktigt för säkerhet
+      httpOnly: true, 
     });
 
     return { success: true };
@@ -29,18 +28,25 @@ export async function login(formData: FormData) {
 }
 
 export async function signup(formData: FormData) {
-  const supabase = await createClient()
-
+  const pb = await createClient();
+  
   const data = {
     email: formData.get('email') as string,
     password: formData.get('password') as string,
+    passwordConfirm: formData.get('password') as string, // PB kräver confirm
+  };
+
+  try {
+    await pb.collection('users').create(data);
+    return { success: true, message: "Konto skapat! Logga in nu." };
+  } catch (e: any) {
+    return { error: "Kunde inte skapa konto. Lösenord måste vara minst 8 tecken." };
   }
+}
 
-  const { error } = await supabase.auth.signUp(data)
-
-  if (error) {
-    return { error: error.message }
-  }
-
-  return { success: true, message: "Konto skapat! Logga in nu." }
+// NY FUNKTION:
+export async function logout() {
+  const cookieStore = await cookies();
+  cookieStore.delete('pb_auth');
+  redirect('/login');
 }
